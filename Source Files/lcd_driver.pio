@@ -1,0 +1,321 @@
+ .program lcd_driver
+
+.wrap_target
+
+setup:
+ set pins, 0x00          ; Pull RS & Enable Low
+  pull Block              ; Pull RS toggle bit from TX_Fifo
+  mov x, OSR              ; Send bit to X for conditional jmp
+  jmp !x, command         ; If X equals 0, we jump to command, else continue to character
+  jmp character           ; Testing if this actually jmps to char
+
+
+character:
+  set pins, 0x01  [15]     ; Set RS pin HIGH
+  pull Block               ; We now pull in the data to send
+  mov OSR, :: OSR          ; Reverse data in OSR
+  out null, 24             ; Push data forward into the correct position
+  set pins, 0x03  [15]     ; Pull Enable HIGH next, leaving RS HIGH too
+  out pins, 4     [3]      ; Send out the first four bits, or the MSB nibble of data
+  set pins, 0x01  [15]     ; latch in first nibble.
+  set pins, 0x03  [15]     ; set enable high again
+  out pins, 4     [3]      ; Send out the second four bits, or the LSB nibble of data
+  set pins, 0x00  [15]     ; latch in second nibble
+  jmp setup       [5]      ; Jump to sending data
+
+command:
+  pull Block               ; We now pull in the data to send
+  mov OSR, :: OSR          ; Reverse data in OSR
+  out null, 24             ; Push data forward into the correct position
+  set pins, 0x02  [15]     ; RS is already low, now we pull Enable HIGH
+  out pins, 4     [3]      ; Send out the first four bits, or the MSB nibble of data
+  set pins, 0x00  [15]     ; latch in first nibble
+  set pins, 0x02  [15]     ; set enable high again
+  out pins, 4     [3]      ; send out second four bits, or the LSB nibble of data
+  set pins, 0x00  [15]     ; latch in the second nibble
+  jmp setup       [5]      ; Jump to sending data
+
+.wrap
+  
+% c-sdk {
+  #include <stdio.h>
+  #include <stdlib.h>
+  #include "hardware/pio.h"
+  #include "hardware/gpio.h"
+  #include "resource/controller_configurations.h"
+
+  #define set_ddram_addr 0x80
+
+
+static const uint8_t _1602a_line1[] = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F};
+static const uint8_t _1602a_line2[] = {0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4A, 0x4B, 0x4C, 0x4D, 0x4E, 0x4F};
+  
+
+
+static inline void lcd_pio_init(lcd_pio *cfig){
+   
+    pio_sm_config c = pio_get_default_sm_config();
+    pio_sm_set_consecutive_pindirs(cfig->port, cfig->sm, cfig->d7, 6, true);
+
+      printf("PIO GPIO Initializing:\n");
+      uint8_t ad = 7;
+    for(uint8_t a = cfig->d7; a <= cfig->d4; a++){
+        printf("LCD Data_%i Pin: #%i.\n", (ad--), a);
+      pio_gpio_init(cfig->port, a);
+      gpio_pull_down(a);
+    }
+        printf("LCD RS Pin: #%i.\n", cfig->rs);
+      pio_gpio_init(cfig->port, cfig->rs);
+        printf("LCD EN Pin: #%i.\n", cfig->en);
+      pio_gpio_init(cfig->port, cfig->en);
+    
+    sm_config_set_out_pins(&c, cfig->d7, 4);
+    sm_config_set_set_pins(&c, cfig->rs, 2);
+    sm_config_set_out_shift(&c, true, false, 8);
+    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_NONE);
+    sm_config_set_clkdiv(&c, 10000);
+
+    
+//    pio_set_irq1_source_enabled(cfig->port, pis_interrupt0, true);
+//      printf("PIO IRQ1 Source (0) Enabled.\n");
+//    pio_set_irq1_source_enabled(cfig->port, pis_interrupt1, true);
+//      printf("PIO IRQ1 Source (1) Enabled.\n");
+//    pio_set_irq1_source_enabled(cfig->port, pis_interrupt2, true);
+//      printf("PIO IRQ1 Source (2) Enabled.\n");
+
+    pio_sm_init(cfig->port, cfig->sm, cfig->offset, &c);
+      printf("PIO SM Initialized.\n");
+    pio_sm_set_enabled(cfig->port, cfig->sm, true);
+      printf("PIO SM Enabled.\n");
+  }
+
+
+bool add_lcd_driver_program(lcd_pio *cfig){
+  bool addable = false;
+  addable = pio_can_add_program(cfig->port, &lcd_driver_program);
+    printf("LCD Driver: %s.\n", ((addable) ? "Loaded." : "Failed."));
+  if(addable){
+    cfig->offset = pio_add_program(cfig->port, &lcd_driver_program);
+    printf("Driver Status: Added.\n");
+  }else{
+    printf("Driver Status: Error.\n");
+  }
+  return addable;
+}
+
+
+uint8_t byte_flip(uint8_t d_in){
+  uint8_t a, b, c = 0;
+  a = (d_in & 0xF0);
+  b = (d_in & 0x0F);
+  c = ((a >> 4) | (b << 4));
+
+  return c;
+}
+
+
+//  Parameters are uint8_t data and reg_sel, along with PIO params
+//  Reg_sel true == CHAR, false == COMM
+void send_byte(lcd_pio *cfig, uint8_t data, bool reg_sel){
+
+//  volatile io_rw_32 *irq_reg = &cfig->port->irq;
+
+  uint32_t output = 0;
+  output = (uint8_t)reg_sel;
+
+  pio_sm_put_blocking(cfig->port, cfig->sm, output);
+   //   printf("Command Data Sent: 0x%02x.\n", output);
+        sleep_us(150);
+    output = data;
+  pio_sm_put_blocking(cfig->port, cfig->sm, output);
+  //      printf("Parameter Data Sent: 0x%02x.\n", output);
+
+}
+
+
+void clear_screen(lcd_pio *cfig){
+  send_byte(cfig, 0x01, false);
+}
+
+
+void send_comm(lcd_pio *cfig, uint8_t command){
+  send_byte(cfig, command, false);
+}
+
+
+void send_char(lcd_pio *cfig, char char_data){
+  send_byte(cfig, (uint8_t)char_data, true);
+}
+
+
+void send_cursor_pos(lcd_pio *cfig, uint8_t row, uint8_t col){
+  uint8_t set_addr = 0;
+  if(row == 1 && col >= 1 && col <= 16){
+    set_addr = _1602a_line1[col - 1];
+//      printf("Setting DDRAM addr row 1: 0x%04x.\n", set_addr);
+  }else if(row == 2 && col >= 1 && col <= 16){
+    set_addr = _1602a_line2[col - 1];
+//      printf("Setting DDRAM addr row 2: 0x%04x.\n", set_addr);
+  }else {
+    printf("Invalid Row or Column choice.\n");
+  }
+//    printf("Sending Cursor Command: 0x%02x.\n", (0x80 | set_addr));
+  send_comm(cfig, (0x80 | set_addr));
+}
+
+
+void send_home(lcd_pio *cfig){
+    sleep_ms(50);
+  send_comm(cfig, 0x02);
+    sleep_ms(50);
+ }
+
+//  Send string should be cofigurable for n amount of chars per line (max 20?)
+void send_string(lcd_pio *cfig, char *char_ray, uint8_t char_lim){
+  for(uint8_t a = 0; a < char_lim; a++){
+    send_char(cfig, char_ray[a]);
+    sleep_ms(10);
+  }
+  //  sleep_ms(100);
+}
+
+
+void send_display(lcd_pio *cfig, char *fst_line, char *snd_line, uint8_t char_lim){
+  send_cursor_pos(cfig, 1, 1);
+//  send_home(pio, SM);
+  send_string(cfig, fst_line, char_lim);
+
+send_cursor_pos(cfig, 2, 1);
+  send_string(cfig, snd_line, char_lim);
+}
+
+
+void set_disp_to_line(lcd_pio *cfig, uint8_t line_num, uint8_t pos){
+
+  uint8_t set_position = 0x00;
+  uint8_t line_addresses[] = {0x00, 0x40, 0x14, 0x54};
+    set_position = (set_ddram_addr | (line_addresses[line_num] + pos));
+  send_comm(cfig, set_position);
+  sleep_ms(10);
+
+}
+
+
+void set_2004_l1(lcd_pio *cfig, char *string, uint8_t start_pos){
+  set_disp_to_line(cfig, 0, start_pos);
+  send_string(cfig, string, (20 - start_pos));
+}
+
+void set_2004_l2(lcd_pio *cfig, char *string, uint8_t start_pos){
+  set_disp_to_line(cfig, 1, start_pos);
+  send_string(cfig, string, (20 - start_pos));
+}
+
+void set_2004_l3(lcd_pio *cfig, char *string, uint8_t start_pos){
+  set_disp_to_line(cfig, 2, start_pos);
+  send_string(cfig, string, (20 - start_pos));
+}
+
+void set_2004_l4(lcd_pio *cfig, char *string, uint8_t start_pos){
+  set_disp_to_line(cfig, 3, start_pos);
+  send_string(cfig, string, (20 - start_pos));
+}
+
+void dsp_2004_str_at_pos(lcd_pio *cfig, char *string, uint8_t spos, uint8_t line){
+  char *err = " !Line Error!      ";
+  switch(line){
+
+    case 1:
+      set_2004_l1(cfig, string, spos);
+    break;
+
+    case 2:
+      set_2004_l2(cfig, string, spos);
+    break;
+
+    case 3:
+      set_2004_l3(cfig, string, spos);
+    break;
+
+    case 4:
+      set_2004_l4(cfig, string, spos);
+    break;
+    
+    default:
+      set_2004_l2(cfig, err, 3);
+      set_2004_l3(cfig, err, 3);
+        sleep_ms(200);
+      clear_screen(cfig);
+    break;
+
+  }
+}
+
+void set_2004_display(lcd_pio *cfig, char *f_l, char *se_l, char *t_l, char *fo_l){
+
+  set_disp_to_line(cfig, 0, 0);
+    send_string(cfig, f_l, 20);
+  
+  set_disp_to_line(cfig, 1, 0);
+    send_string(cfig, se_l, 20);
+
+  set_disp_to_line(cfig, 2, 0);
+    send_string(cfig, t_l, 20);
+
+  set_disp_to_line(cfig, 3, 0);
+    send_string(cfig, fo_l, 20);
+
+}
+
+//  Initialize 1602a lcd display
+void init_lcd(lcd_pio *cfig){
+
+  printf("Beginning 1602 LCD initialization now.\n");
+
+    send_comm(cfig, 0x02);
+      sleep_ms(100);
+    send_comm(cfig, 0x03);
+      sleep_ms(100);
+    send_comm(cfig, 0x03);
+      sleep_ms(100);
+    send_comm(cfig, 0x03);
+      sleep_ms(100);
+    send_comm(cfig, 0x28);
+      sleep_ms(100);
+    send_comm(cfig, 0x02);
+      sleep_ms(100);
+
+  printf("LCD Should be initialized now.\n");
+
+}
+
+//  Initialize 2004a lcd display
+void init_2004_lcd(lcd_pio *cfig){
+  printf("Beginning 2004 LCD initialization now.\n");
+
+    send_comm(cfig, 0x02 | 0x80);
+      sleep_ms(100);
+    send_comm(cfig, 0x08 | 0x04);
+      sleep_ms(100);
+    send_comm(cfig, 0x04 | 0x02);
+      sleep_ms(100);
+    send_comm(cfig, 0x01);
+      sleep_ms(100);
+
+  printf("LCD Should be initialized now.\n");
+}
+
+
+void start_2004_lcd_driver(lcd_pio *cfig){
+  if(add_lcd_driver_program(cfig)){
+    lcd_pio_init(cfig);
+      sleep_ms(100);
+    init_2004_lcd(cfig);
+  }else{
+    printf("Error:  Cannot ADD/START | 2004A LCD DRIVER PROGRAM |\n\n");
+  }
+}
+
+%}
+
+

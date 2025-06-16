@@ -1,0 +1,59 @@
+Controller Revision 4 Pin Diagram:
+
+Pins + component + signal name
+
+pico 0 - 74165 - QH
+pico 1 - 74165 - sh/ld
+pico 2 - 74165 - clk/inh
+pico 3 - 74165 - clk
+74165 - G - Rotary encoder 2 button
+74165 - H - Rotary encoder 1 button
+
+pico 1 - 74595 - rclk
+pico 3 - 74595 - clk
+pico 4 - 74595 - s_data
+pico 5 - lm393 - output
+
+pico 6 - dip switch - in 1
+pico 7 - dip switch - in 2
+pico 8 - dip switch - in 3
+pico 9 - dip switch - in 4
+
+pico 10 - mcp3008 - shutdown
+
+pico 11 - nrf24l01 - CE
+pico 12 - nrf24l01 - MISO
+pico 13 - nrf24l01 - CSN
+pico 14 - nrf24l01 - SCK
+pico 15 - nrf24l01 - MOSI
+
+pico 16 - 2004a lcd - data 7
+pico 17 - 2004a lcd - data 6
+pico 18 - 2004a lcd - data 5
+pico 19 - 2004a lcd - data 4
+pico 20 - 2004a lcd - RS
+pico 21 - 2004a lcd - EN
+lcd led ground goes to switchable resistance
+
+pico 26 - mcp3008 - DIN
+pico 27 - mcp3008 - dout
+pico 28 - mcp3008 - CLK
+
+
+DIGIT Register 74595:
+Qa - digit --->
+Qb - digit -->
+Qc - digit ->
+Qd - digit >
+
+Qe - 7447 A
+Qf - 7447 B
+Qg - 7447 C
+Qh - 7447 D
+
+MCP3008 ADC:
+CH0 - Vertical Joystick
+CH1 - Horizontal Joystick
+CH2 - Hall Sensor
+CH3 - Thermistor
+CH4 - Voltage Level
