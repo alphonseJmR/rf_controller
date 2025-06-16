@@ -10,50 +10,6 @@ uint8_t a;
   // Our NRF client
 nrf_client_t trans_client;
 
-char channel[20];
-char data_rate[20];
-char power[20]; 
-char *tesxt = "Test Code          ";
-char numtesk[20];
-char vertical[20];
-char horizontal[20];
-
-char *init_err = "     Init Error    ";
-char *init_err1 = "   Please Reset   ";
-
-char *init_tex = "   Initialisation  ";
-char *init_text = "  Was A Success    ";
-
-char *adc_test = " Testing ADC Input  ";
-
-repeating_timer_t calc_val;
-repeating_timer_t dma_chan;
-repeating_timer_t adc_runn;
-
-ADC anal_sticks = {
-  .ADC_1 = {
-    .adc_instance = 0,
-    .pinum = 26,
-    .mapped = 0,
-    .miin = 10,
-    .main = 4095,
-    .miout = 0,
-    .maout = 2048,
-    .raw_avg = 0
-  },
-  .ADC_2 = {
-    .adc_instance = 1,
-    .pinum = 27,
-    .mapped = 0,
-    .miin = 10,
-    .main = 4095,
-    .miout = 0,
-    .maout = 2048,
-    .raw_avg = 0
-  }
-};
-
-
 nrf_manager_t controller = {
 
     // AW_3_BYTES, AW_4_BYTES, AW_5_BYTES
@@ -76,15 +32,17 @@ nrf_manager_t controller = {
   
 };
 
-
+repeating_timer_t calc_val;
+repeating_timer_t dma_chan;
+repeating_timer_t adc_runn;
 
 void set_nrf_init_vals(nrf_manager_t *config, nrf_client_t *client, pio_rot *IO){
 bool bool_buffer = false;
 IO->r1 = 110;
 
-
   while(!bool_buffer){
-
+    printf("bool1 status: %i.\n", (uint8_t)IO->r1_b);
+    printf("bool2 status: %i.\n", (uint8_t)IO->r2_b);
   if(IO->r1 < 121){
     config->channel = IO->r1;
     sprintf(channel, "Enter Channel: %3i ", IO->r1);
@@ -96,6 +54,7 @@ IO->r1 = 110;
     config->channel = 110;
     IO->r1 = 110;
   }
+
   bool_buffer = IO->r1_b;
   }
     printf("Safe to Release\n");
@@ -179,7 +138,7 @@ IO->r1 = 110;
 }
 
 bool adc_map_update(repeating_timer_t *rt){
-  if(a < 16){
+  if(a < 32){
     adc_pin_call(&anal_sticks.ADC_1, a);
     adc_pin_call(&anal_sticks.ADC_2, a);
     a++;
@@ -191,7 +150,6 @@ bool adc_map_update(repeating_timer_t *rt){
 }
 
 int main() {
-  uint8_t channel_to_read = 5;
   uint16_t buffer = 0;
   uint8_t a = 0;
   // Toggler if main program can run.
@@ -240,11 +198,10 @@ int main() {
 
   dma_channel_start(reg_in.channel);
   start_2004_lcd_driver(&lcd);
-    sleep_us(500);
-  set_nrf_init_vals(&controller, &trans_client, &rotary_data);
-  nrf_client_configured(&trans_client, &trans_pins, &controller, 2000000);
 
-  if(timer_flags != 0x03){
+  printf("\n\tInitalization Flags Check: 0x%02x.\n", timer_flags);
+
+  if(timer_flags != 0x07){
     main_run_b = false;
       clear_screen(&lcd);
       dsp_2004_str_at_pos(&lcd, init_err, 0, 2);
@@ -255,6 +212,10 @@ int main() {
     dsp_2004_str_at_pos(&lcd, init_tex, 0, 2);
     dsp_2004_str_at_pos(&lcd, init_text, 0, 3);
   }
+    sleep_us(500);
+
+  set_nrf_init_vals(&controller, &trans_client, &rotary_data);
+  nrf_client_configured(&trans_client, &trans_pins, &controller, 2000000);
 
 rotary_data.r1 = 0;
 
